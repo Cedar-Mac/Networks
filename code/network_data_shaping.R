@@ -2,7 +2,7 @@
 # from the difference matrices of treatment reach minus control reach
 # abundances. 
 
-x <- c("tidyverse", "vegan", "lubridate")
+x <- c("tidyverse", "vegan", "lubridate", "rstatix")
 lapply(x, library, character.only = TRUE)
 
 bugs <- readxl::read_xlsx("../data/2017-18_bugs.xlsx", )
@@ -12,20 +12,6 @@ bugs$CollDate <- as.factor(year(bugs$CollDate))
 bugs.agg <- aggregate(Count ~ CollDate + Stream + Treatment + Family, sum, data = bugs)
 
 bugs.agg <- spread(bugs.agg, key = "Family", value = "Count")
-
-# Drop singleton taxa
-drops = c("wtf", 
-          "Coleoptera", 
-          "Collembola", 
-          "Empididae", 
-          "Isopod", 
-          "Tabanidae", 
-          "Uenoidae", 
-          "Taeniopterygidae", 
-          "Crayfish", 
-          "Clam")
-
-bugs.agg <- bugs.agg[ , !(names(bugs.agg) %in% drops)]
 
 # Fill NA
 bugs.agg[is.na(bugs.agg)] <- 0
@@ -41,10 +27,23 @@ Y_17_df = filter(bugs.agg, CollDate == "2017", Treatment == "Y")
 Y_17_df <- Y_17_df[, !(names(Y_17_df) %in% grouping)]
 diff_17 = Y_17_df - N_17_df
 
+# Filter out singleton taxa (get count of non-zero occurrences. If count less than 1 drop column)
+diff_17 <- diff_17 %>% select(where(~ any(length(which(. != 0)) > 1)))
+
 # Turn into correlation matrix
-diff_17_corr = cor(diff_17[,5:39], method = "pearson")
+diff_17_corr = cor_mat(diff_17, method = "pearson", alternative = "two.sided")
 diff_17_corr[is.na(diff_17_corr)] <- 0
-diff_17_corr = as.data.frame(diff_17_corr)
+p_values_17 <- cor_get_pval(diff_17_corr)
+
+# Plot 2017 correlation matrix
+png(height=1200, width=1800, file="../2017_corr_coeff_table.png")
+
+diff_17_corr %>%
+  cor_reorder() %>%
+  pull_lower_triangle() %>%
+  cor_plot(label=FALSE) 
+
+dev.off()
 
 # Do the same for 2018
 N_18_df = filter(bugs.agg, CollDate == "2018", Treatment == "N")
@@ -54,9 +53,27 @@ Y_18_df = filter(bugs.agg, CollDate == "2018", Treatment == "Y")
 Y_18_df <- Y_18_df[, !(names(Y_18_df) %in% grouping)]
 diff_18 = Y_18_df - N_18_df
 
-diff_18_corr = cor(diff_18[,5:39], method = "pearson")
-diff_18_corr[is.na(diff_18_corr)] <- 0
-diff_18_corr = as.data.frame(diff_18_corr)
+# Filter out singleton taxa (get count of non-zero occurrences. If count less than 1 drop column)
+diff_18 <- diff_18 %>% select(where(~ any(length(which(. != 0)) > 1)))
 
+diff_18_corr = cor_mat(diff_18, method = "pearson")
+diff_18_corr[is.na(diff_18_corr)] <- 0
+p_values_18 <- cor_get_pval(diff_18_corr)
+
+# Plot 2018 correlation matrix
+png(height=1200, width=1800, file="../2018_corr_coeff_table.png")
+
+diff_18_corr %>%
+  cor_reorder() %>%
+  pull_lower_triangle() %>%
+  cor_plot(label=FALSE) 
+
+dev.off()
+
+# Drop rownames
+diff_17_corr <- diff_17_corr[, 2:length(diff_17_corr)]
+diff_18_corr <- diff_18_corr[, 2:length(diff_18_corr)]
+
+# Write out
 write_csv(diff_17_corr, file = "../data/2017_diff_corr.csv")
 write_csv(diff_18_corr, file = "../data/2018_diff_corr.csv")
